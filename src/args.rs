@@ -16,4 +16,6 @@ pub(crate) struct Args {
     min_interval: String,
     #[clap(long)]
     storage_limit: String,
+    #[clap(long)]
+    max_cache: u32,
 }

@@ -1,22 +1,20 @@
 use crate::Result;
-use std::collections::HashMap;
-use std::fs::File;
-use std::future;
-use std::io::{stdout, Write};
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use dashmap::DashMap;
 use moka::future::{Cache, FutureExt};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio::io::AsyncWriteExt;
 use tokio::runtime;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio::time::MissedTickBehavior;
-use crate::error::TimeFSError;
+use crate::fs::BLOCK_SIZE;
 
 #[derive(Error, Debug)]
 pub enum BlockCacheError {
@@ -117,7 +115,7 @@ impl BlockCache {
         dir_path.join(format!("block_{}.bin", block_id))
     }
 
-    async fn get_block(&self, block_id: u64) -> Result<Vec<u8>> {
+    pub async fn get_block(&self, block_id: u64) -> Result<Vec<u8>> {
         if let Some(entry) = self.blocks.get(&block_id).await {
             return Ok(entry.data.clone());
         }
@@ -146,7 +144,7 @@ impl BlockCache {
         }
     }
 
-    async fn update_block(&self, block_id: u64, data: Vec<u8>) -> Result<()> {
+    pub async fn update_block(&self, block_id: u64, data: Vec<u8>) -> Result<()> {
         let now = Instant::now();
 
         self.blocks.insert(block_id, CacheEntry {
@@ -226,7 +224,7 @@ impl BlockCache {
         })
     }
 
-    async fn flush_block(
+    pub async fn flush_block(
         &self,
         block_id: u64,
         wait: bool,
@@ -382,14 +380,21 @@ impl BlockRef {
             size: 0,
         }
     }
+    
+    pub fn alloc_blocks(start_id: u64, size: u64) -> Vec<Self> {
+        let block_size = BLOCK_SIZE as u64;
+        let blocks_amount = (size + block_size - 1) / block_size;
+        (start_id..start_id + blocks_amount)
+            .into_iter()
+            .map(|id| Self::new(id))
+            .collect()
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::thread::sleep;
-    use libc::tm;
-    use tempfile::{tempdir, TempDir};
     use super::*;
+    use tempfile::{tempdir, TempDir};
 
     fn setup_test_dir() -> TempDir {
         tempdir().expect("Failed to create test dir")
